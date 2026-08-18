@@ -3,7 +3,6 @@
 Standalone desktop tool to see a camera's live feed, tune exposure/gain/white
 balance/etc, mark and export an ROI, and record video - for any camera type
 (V4L2/UVC, OPT USB3 Vision, and GigE Vision as a future stub), auto-detected.
-Not tied to any one project.
 
 ## What it does
 
