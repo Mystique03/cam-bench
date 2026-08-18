@@ -1,0 +1,556 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Cam Bench</title>
+<style>
+  :root {
+    /* dark-first: this is the tool's native identity (camera-vendor software convention) */
+    --bg: #12151a;
+    --surface: #1a1f27;
+    --surface-2: #212832;
+    --surface-3: #2a3240;
+    --border: #2c333d;
+    --border-soft: #232a33;
+    --text: #e7ebf0;
+    --text-dim: #8993a3;
+    --text-faint: #5c6474;
+    --accent: #5fd0c2;
+    --accent-dim: #3a7d74;
+    --warn: #e8a33d;
+    --danger: #e2596b;
+    --good: #6fcf7a;
+    --gige: #b3a8ff;
+    --mono: ui-monospace, "SFMono-Regular", "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "IBM Plex Sans", Roboto, sans-serif;
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      --bg: #eef0f3; --surface: #ffffff; --surface-2: #f5f6f8; --surface-3: #e9ecf0;
+      --border: #d7dbe1; --border-soft: #e2e5ea; --text: #1b2027; --text-dim: #5b6472;
+      --text-faint: #97a0ac; --accent: #1f8f80; --accent-dim: #bfe6e0;
+      --warn: #b4741a; --danger: #c53a52; --good: #2f9b46; --gige: #6a5fc9;
+    }
+  }
+  :root[data-theme="light"] {
+    --bg: #eef0f3; --surface: #ffffff; --surface-2: #f5f6f8; --surface-3: #e9ecf0;
+    --border: #d7dbe1; --border-soft: #e2e5ea; --text: #1b2027; --text-dim: #5b6472;
+    --text-faint: #97a0ac; --accent: #1f8f80; --accent-dim: #bfe6e0;
+    --warn: #b4741a; --danger: #c53a52; --good: #2f9b46; --gige: #6a5fc9;
+  }
+
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; height: 100%;
+    background: var(--bg); color: var(--text);
+    font-family: var(--sans); font-size: 14px; line-height: 1.45;
+    overflow: hidden;
+  }
+  button, select, input { font-family: inherit; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .app { width: 100%; height: 100vh; display: flex; flex-direction: column; background: var(--surface); }
+  .titlebar {
+    flex: 0 0 auto; display: flex; align-items: center; gap: 10px;
+    padding: 10px 14px; background: var(--surface-2); border-bottom: 1px solid var(--border);
+  }
+  .dots { display: flex; gap: 6px; }
+  .dots span { width: 11px; height: 11px; border-radius: 50%; background: var(--surface-3); border: 1px solid var(--border); }
+  .titlebar .name { font-size: 12.5px; font-weight: 600; color: var(--text-dim); letter-spacing: .02em; margin-left: 4px; }
+  .titlebar .status { margin-left: auto; display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-dim); }
+  .status .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--good); box-shadow: 0 0 0 3px color-mix(in srgb, var(--good) 20%, transparent); }
+
+  .body {
+    flex: 1 1 auto; min-height: 0; display: grid;
+    grid-template-columns: minmax(180px, 220px) 1fr minmax(240px, 284px);
+    grid-template-rows: 100%;
+  }
+
+  .devices { border-right: 1px solid var(--border); background: var(--surface); display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+  .devices-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 12px 8px; }
+  .devices-head h2 { margin: 0; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--text-faint); }
+  .rescan { display: flex; align-items: center; gap: 5px; background: transparent; border: 1px solid var(--border); color: var(--text-dim); border-radius: 6px; padding: 4px 8px; font-size: 11.5px; cursor: pointer; }
+  .rescan:hover { border-color: var(--accent-dim); color: var(--text); }
+  .rescan svg { width: 12px; height: 12px; }
+
+  .device-list { list-style: none; margin: 0; padding: 4px 8px 12px; display: flex; flex-direction: column; gap: 6px; overflow-y: auto; }
+  .device-empty { padding: 16px 12px; font-size: 12px; color: var(--text-faint); }
+  .device { border: 1px solid var(--border-soft); background: var(--surface-2); border-radius: 8px; padding: 9px 10px; cursor: pointer; display: flex; flex-direction: column; gap: 6px; }
+  .device:hover { border-color: var(--border); }
+  .device.active { border-color: var(--accent-dim); background: color-mix(in srgb, var(--accent) 8%, var(--surface-2)); }
+  .device-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .device-id { font-family: var(--mono); font-size: 12px; font-weight: 600; }
+  .badge { font-size: 9.5px; font-weight: 700; letter-spacing: .04em; padding: 2px 6px; border-radius: 100px; white-space: nowrap; }
+  .badge.v4l2 { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); }
+  .badge.opt  { background: color-mix(in srgb, var(--warn) 20%, transparent); color: var(--warn); }
+  .badge.gige { background: color-mix(in srgb, var(--gige) 22%, transparent); color: var(--gige); }
+  .device-meta { font-size: 11px; color: var(--text-dim); display: flex; align-items: center; justify-content: space-between; }
+  .device-type-select { width: 100%; background: var(--surface); border: 1px solid var(--border); color: var(--text-dim); border-radius: 5px; font-size: 11px; padding: 3px 5px; }
+
+  .stage {
+    position: relative; overflow: hidden;
+    background:
+      repeating-linear-gradient(0deg, var(--border-soft) 0 1px, transparent 1px 40px),
+      repeating-linear-gradient(90deg, var(--border-soft) 0 1px, transparent 1px 40px),
+      #0c0e12;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .stage::after { content: ""; position: absolute; inset: 0; box-shadow: inset 0 0 90px rgba(0,0,0,.6); pointer-events: none; }
+  #live-frame { max-width: 100%; max-height: 100%; display: none; }
+  #live-frame.showing { display: block; }
+  .stage-empty { font-family: var(--mono); font-size: 12px; color: var(--text-faint); }
+  #roi-canvas { position: absolute; inset: 0; width: 100%; height: 100%; cursor: crosshair; display: none; }
+  #roi-canvas.active { display: block; }
+
+  .hud { position: absolute; display: flex; gap: 8px; font-family: var(--mono); font-size: 11px; color: #cfe9e4; }
+  .hud-top { top: 12px; left: 12px; right: 12px; justify-content: space-between; }
+  .hud-chip { background: rgba(12,14,18,.55); border: 1px solid rgba(255,255,255,.08); padding: 3px 8px; border-radius: 5px; backdrop-filter: blur(2px); }
+  .hud-live { display: flex; align-items: center; gap: 6px; }
+  .hud-live .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--danger); }
+  @media (prefers-reduced-motion: no-preference) { .hud-live .dot.on { animation: blink 1.6s ease-in-out infinite; } }
+  @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+  .hud-bottom { bottom: 12px; left: 12px; }
+
+  .stage-toolbar { position: absolute; bottom: 12px; right: 12px; display: flex; gap: 6px; }
+  .tool-btn { display: flex; align-items: center; gap: 6px; background: rgba(12,14,18,.6); border: 1px solid rgba(255,255,255,.12); color: #d7dde3; padding: 6px 10px; border-radius: 6px; font-size: 11.5px; font-weight: 600; cursor: pointer; backdrop-filter: blur(2px); }
+  .tool-btn:hover { border-color: rgba(255,255,255,.28); }
+  .tool-btn.on { background: color-mix(in srgb, var(--accent) 30%, rgba(12,14,18,.6)); border-color: var(--accent); color: #eafffb; }
+  .tool-btn.rec { color: #ffd7dd; }
+  .tool-btn.rec .rec-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--danger); }
+  .tool-btn.rec.on { background: color-mix(in srgb, var(--danger) 35%, rgba(12,14,18,.6)); border-color: var(--danger); }
+  @media (prefers-reduced-motion: no-preference) { .tool-btn.rec.on .rec-dot { animation: blink 1.2s ease-in-out infinite; } }
+
+  .histogram { display: flex; align-items: flex-end; gap: 1px; height: 44px; padding: 4px 6px; background: var(--surface-2); border: 1px solid var(--border-soft); border-radius: 6px; }
+  .histogram span { flex: 1; background: color-mix(in srgb, var(--accent) 55%, var(--surface-3)); border-radius: 1px 1px 0 0; min-height: 2px; }
+
+  .controls { border-left: 1px solid var(--border); background: var(--surface); padding: 14px 14px 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 18px; }
+  .ctl-group { display: flex; flex-direction: column; gap: 10px; }
+  .ctl-group h3 { margin: 0; font-size: 10.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--text-faint); }
+  .ctl-empty { font-size: 11.5px; color: var(--text-faint); }
+  .slider-row { display: flex; flex-direction: column; gap: 5px; }
+  .slider-row .row-top { display: flex; align-items: baseline; justify-content: space-between; }
+  .slider-row label { font-size: 12px; color: var(--text-dim); }
+  .slider-row .value { font-family: var(--mono); font-size: 12px; font-variant-numeric: tabular-nums; color: var(--text); }
+  input[type="range"] { -webkit-appearance: none; width: 100%; height: 4px; border-radius: 2px; background: var(--surface-3); accent-color: var(--accent); }
+  input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%; background: var(--accent); border: 2px solid var(--surface); box-shadow: 0 0 0 1px var(--accent); cursor: pointer; }
+
+  .toggle-row { display: flex; align-items: center; justify-content: space-between; }
+  .toggle-row label { font-size: 12px; color: var(--text-dim); }
+  .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+  .seg button { background: var(--surface-2); color: var(--text-dim); border: none; padding: 4px 10px; font-size: 11px; cursor: pointer; }
+  .seg button + button { border-left: 1px solid var(--border); }
+  .seg button.on { background: color-mix(in srgb, var(--accent) 22%, var(--surface-2)); color: var(--text); }
+
+  select.field { width: 100%; background: var(--surface-2); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 7px 8px; font-size: 12px; }
+
+  .snap-btn { margin-top: auto; display: flex; align-items: center; justify-content: center; gap: 8px; background: var(--accent); color: #0b1210; border: none; border-radius: 8px; padding: 11px; font-size: 13px; font-weight: 700; cursor: pointer; }
+  .snap-btn:hover { filter: brightness(1.06); }
+  .snap-btn svg { width: 15px; height: 15px; }
+  .snap-hint { text-align: center; font-size: 10.5px; color: var(--text-faint); margin-top: -8px; }
+
+  .btn-row { display: flex; gap: 8px; }
+  .btn-secondary { flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; background: var(--surface-2); border: 1px solid var(--border); color: var(--text); border-radius: 7px; padding: 8px; font-size: 12px; font-weight: 600; cursor: pointer; }
+  .btn-secondary:hover { border-color: var(--accent-dim); }
+  .btn-secondary svg { width: 13px; height: 13px; }
+  .btn-secondary.ghost { color: var(--text-dim); font-weight: 500; }
+
+  .point-list { font-family: var(--mono); font-size: 11px; color: var(--text-dim); background: var(--surface-2); border: 1px solid var(--border-soft); border-radius: 6px; padding: 7px 9px; display: flex; flex-direction: column; gap: 3px; min-height: 20px; }
+  .point-list .count { font-family: var(--sans); font-size: 10.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--text-faint); margin-bottom: 2px; }
+
+  .record-btn { display: flex; align-items: center; justify-content: center; gap: 8px; background: var(--surface-2); border: 1px solid var(--border); color: var(--text); border-radius: 8px; padding: 10px; font-size: 13px; font-weight: 700; cursor: pointer; }
+  .record-btn:hover { border-color: var(--danger); }
+  .record-btn.on { background: color-mix(in srgb, var(--danger) 22%, var(--surface-2)); border-color: var(--danger); }
+  .record-btn .rec-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--danger); }
+  .record-hint { display: flex; justify-content: space-between; font-size: 10.5px; color: var(--text-faint); font-family: var(--mono); }
+
+  .toast { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); background: var(--surface-3); border: 1px solid var(--border); color: var(--text); padding: 8px 14px; border-radius: 8px; font-size: 12.5px; opacity: 0; pointer-events: none; transition: opacity .2s; z-index: 10; }
+  .toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="titlebar">
+    <div class="dots"><span></span><span></span><span></span></div>
+    <div class="name">Cam Bench</div>
+    <div class="status"><span class="dot"></span> <span id="cam-count">0 cameras detected</span></div>
+  </div>
+
+  <div class="body">
+    <!-- LEFT: device list -->
+    <div class="devices">
+      <div class="devices-head">
+        <h2>Detected cameras</h2>
+        <button class="rescan" id="rescan-btn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-2.6-6.36M21 4v5h-5"/></svg>
+          Rescan
+        </button>
+      </div>
+      <ul class="device-list" id="device-list">
+        <li class="device-empty">No cameras yet - click Rescan.</li>
+      </ul>
+    </div>
+
+    <!-- CENTER: live stage -->
+    <div class="stage">
+      <div class="stage-empty" id="stage-empty">select a camera</div>
+      <img id="live-frame" alt="">
+      <canvas id="roi-canvas"></canvas>
+      <div class="hud hud-top">
+        <span class="hud-chip" id="hud-device">-</span>
+        <span style="display:flex; gap:8px;">
+          <span class="hud-chip" id="hud-focus">focus -</span>
+          <span class="hud-chip hud-live"><span class="dot" id="hud-live-dot"></span> <span id="hud-live-text">IDLE</span></span>
+        </span>
+      </div>
+      <div class="hud hud-bottom"><span class="hud-chip" id="hud-res-fps">- · - fps</span></div>
+      <div class="stage-toolbar">
+        <button class="tool-btn" id="roi-toggle">
+          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3h7v7H3zM14 14h7v7h-7z"/><path d="M10 6.5h4M6.5 10v4"/></svg>
+          Draw ROI
+        </button>
+        <button class="tool-btn" id="zebra-toggle">
+          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6l4 4-4 4M20 6l-4 4 4 4M9 18h6"/></svg>
+          Zebra
+        </button>
+      </div>
+    </div>
+
+    <!-- RIGHT: controls -->
+    <div class="controls">
+      <div class="ctl-group">
+        <h3>Camera controls</h3>
+        <div id="dynamic-controls"><div class="ctl-empty">select a camera to see its controls</div></div>
+        <div class="histogram" id="histogram"></div>
+      </div>
+
+      <div class="ctl-group">
+        <h3>ROI</h3>
+        <div class="slider-row">
+          <div class="row-top"><label for="roi-shape">Shape</label></div>
+          <select id="roi-shape" class="field">
+            <option value="rect">Rect</option>
+            <option value="quad" selected>Quad (4-point)</option>
+            <option value="polygon">Polygon (N-point)</option>
+          </select>
+        </div>
+        <div class="point-list" id="roi-points"><div class="count">0 points</div></div>
+        <div class="btn-row">
+          <button class="btn-secondary ghost" id="roi-clear">Clear</button>
+          <button class="btn-secondary" id="roi-export">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+            Export
+          </button>
+        </div>
+        <select class="field" id="roi-format" style="font-size:11px;">
+          <option value="iwata">YAML (Rect/Quad/Polygon)</option>
+          <option value="generic">JSON (normalized points)</option>
+        </select>
+      </div>
+
+      <div class="ctl-group">
+        <h3>Recording</h3>
+        <select class="field" id="record-format">
+          <option value="mp4">MP4 (H.264)</option>
+          <option value="avi">AVI (XVID)</option>
+        </select>
+        <button class="record-btn" id="record-toggle"><span class="rec-dot"></span> Start recording</button>
+        <div class="record-hint"><span id="record-elapsed">00:00</span><span id="record-size">0 MB</span></div>
+      </div>
+
+      <button class="snap-btn" id="save-frame">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+        Save frame
+      </button>
+      <div class="snap-hint">saves current frame as PNG</div>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+'use strict';
+
+const BADGE_LABEL = { v4l2: 'V4L2', opt: 'OPT', gige: 'GigE' };
+let devices = [];
+let activeDeviceId = null;
+let activeBackend = null;
+let lastResolution = [0, 0];
+let roiDrawing = false;
+let roiPoints = [];
+let recording = false;
+
+function api() { return window.pywebview.api; }
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => el.classList.remove('show'), 2200);
+}
+
+// ---------- device list ----------
+async function rescan() {
+  devices = await api().discover();
+  renderDeviceList();
+  document.getElementById('cam-count').textContent = `${devices.length} camera${devices.length === 1 ? '' : 's'} detected`;
+}
+
+function renderDeviceList() {
+  const list = document.getElementById('device-list');
+  list.innerHTML = '';
+  if (!devices.length) {
+    list.innerHTML = '<li class="device-empty">No cameras found - click Rescan.</li>';
+    return;
+  }
+  for (const dev of devices) {
+    const li = document.createElement('li');
+    li.className = 'device' + (dev.device_id === activeDeviceId ? ' active' : '');
+    li.innerHTML = `
+      <div class="device-top">
+        <span class="device-id">${dev.device_id}</span>
+        <span class="badge ${dev.backend}">${BADGE_LABEL[dev.backend] || dev.backend}</span>
+      </div>
+      <div class="device-meta"><span>${dev.resolution ? dev.resolution.join('x') : dev.label}</span><span>${dev.device_id === activeDeviceId ? 'live' : 'idle'}</span></div>
+      <select class="device-type-select">
+        ${['v4l2', 'opt', 'gige'].map(b => `<option value="${b}" ${b === dev.backend ? 'selected' : ''}>${BADGE_LABEL[b]}</option>`).join('')}
+      </select>`;
+    li.querySelector('.device-type-select').addEventListener('click', e => e.stopPropagation());
+    li.querySelector('.device-type-select').addEventListener('change', e => selectCamera(dev.device_id, e.target.value));
+    li.addEventListener('click', () => selectCamera(dev.device_id, li.querySelector('.device-type-select').value));
+    list.appendChild(li);
+  }
+}
+
+async function selectCamera(deviceId, backendOverride) {
+  const result = await api().select_camera(deviceId, backendOverride);
+  if (!result.ok) {
+    toast(`camera open failed: ${result.error}`);
+    return;
+  }
+  activeDeviceId = deviceId;
+  activeBackend = backendOverride;
+  renderDeviceList();
+  renderControls(result.controls);
+  document.getElementById('hud-device').textContent = `${deviceId} · ${BADGE_LABEL[backendOverride] || backendOverride}`;
+  document.getElementById('stage-empty').style.display = 'none';
+  document.getElementById('live-frame').classList.add('showing');
+  document.getElementById('hud-live-dot').classList.add('on');
+  document.getElementById('hud-live-text').textContent = 'LIVE';
+}
+
+// ---------- dynamic controls ----------
+function renderControls(controls) {
+  const el = document.getElementById('dynamic-controls');
+  el.innerHTML = '';
+  const names = Object.keys(controls);
+  if (!names.length) {
+    el.innerHTML = '<div class="ctl-empty">this backend exposes no controls</div>';
+    return;
+  }
+  for (const name of names) {
+    const spec = controls[name];
+    const row = document.createElement('div');
+    if (spec.kind === 'bool') {
+      row.className = 'toggle-row';
+      row.innerHTML = `<label>${name}</label>
+        <div class="seg">
+          <button data-v="1" class="${spec.value ? 'on' : ''}">On</button>
+          <button data-v="0" class="${spec.value ? '' : 'on'}">Off</button>
+        </div>`;
+      row.querySelectorAll('button').forEach(btn => btn.addEventListener('click', async () => {
+        const value = btn.dataset.v === '1';
+        row.querySelectorAll('button').forEach(b => b.classList.remove('on'));
+        btn.classList.add('on');
+        const r = await api().set_control(name, value);
+        if (!r.ok) toast(`${name}: ${r.error}`);
+      }));
+    } else if (spec.kind === 'enum') {
+      row.className = 'slider-row';
+      row.innerHTML = `<div class="row-top"><label>${name}</label></div>
+        <select class="field">${spec.options.map(o => `<option ${o === spec.value ? 'selected' : ''}>${o}</option>`).join('')}</select>`;
+      row.querySelector('select').addEventListener('change', async e => {
+        const r = await api().set_control(name, e.target.value);
+        if (!r.ok) toast(`${name}: ${r.error}`);
+      });
+    } else {
+      row.className = 'slider-row';
+      const unit = spec.unit ? ` ${spec.unit}` : '';
+      row.innerHTML = `<div class="row-top"><label>${name}</label><span class="value">${spec.value}${unit}</span></div>
+        <input type="range" min="${spec.min}" max="${spec.max}" step="${spec.step || 1}" value="${spec.value}">`;
+      const input = row.querySelector('input');
+      const valueEl = row.querySelector('.value');
+      let debounce = null;
+      input.addEventListener('input', () => {
+        valueEl.textContent = `${input.value}${unit}`;
+        clearTimeout(debounce);
+        debounce = setTimeout(async () => {
+          const r = await api().set_control(name, parseFloat(input.value));
+          if (!r.ok) toast(`${name}: ${r.error}`);
+        }, 120);
+      });
+    }
+    el.appendChild(row);
+  }
+}
+
+// ---------- live frame + stats polling ----------
+function pollFrame() {
+  if (activeDeviceId) {
+    document.getElementById('live-frame').src = `/frame.jpg?t=${Date.now()}`;
+  }
+  setTimeout(pollFrame, 120);
+}
+
+async function pollStats() {
+  try {
+    const stats = await (await fetch('/stats.json')).json();
+    document.getElementById('hud-focus').textContent = `focus ${stats.focus}`;
+    document.getElementById('hud-res-fps').textContent = `${stats.resolution.join('x')} · ${stats.fps} fps`;
+    lastResolution = stats.resolution;
+    renderHistogram(stats.histogram || []);
+    if (stats.error) toast(stats.error);
+  } catch (e) { /* server not up yet - ignore, next poll retries */ }
+  setTimeout(pollStats, 500);
+}
+
+function renderHistogram(bins) {
+  const el = document.getElementById('histogram');
+  el.innerHTML = bins.map(v => `<span style="height:${Math.max(2, v * 100)}%"></span>`).join('');
+}
+
+// ---------- ROI drawing ----------
+const canvas = document.getElementById('roi-canvas');
+const ctx = canvas.getContext('2d');
+
+function resizeCanvas() {
+  const img = document.getElementById('live-frame');
+  canvas.width = img.clientWidth || canvas.parentElement.clientWidth;
+  canvas.height = img.clientHeight || canvas.parentElement.clientHeight;
+}
+window.addEventListener('resize', resizeCanvas);
+
+function redrawRoi() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  if (!roiPoints.length) return;
+  ctx.strokeStyle = '#5fd0c2';
+  ctx.fillStyle = '#5fd0c2';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  roiPoints.forEach(([x, y], i) => {
+    const [cx, cy] = sourceToCanvas(x, y);
+    if (i === 0) ctx.moveTo(cx, cy); else ctx.lineTo(cx, cy);
+    ctx.fillRect(cx - 3, cy - 3, 6, 6);
+  });
+  if (roiPoints.length > 2) ctx.closePath();
+  ctx.stroke();
+}
+
+function sourceToCanvas(x, y) {
+  const [rw, rh] = lastResolution;
+  if (!rw || !rh) return [x, y];
+  return [x / rw * canvas.width, y / rh * canvas.height];
+}
+function canvasToSource(cx, cy) {
+  const [rw, rh] = lastResolution;
+  if (!rw || !rh) return [cx, cy];
+  return [cx / canvas.width * rw, cy / canvas.height * rh];
+}
+
+canvas.addEventListener('click', async e => {
+  if (!roiDrawing) return;
+  resizeCanvas();
+  const rect = canvas.getBoundingClientRect();
+  const [x, y] = canvasToSource(e.clientX - rect.left, e.clientY - rect.top);
+  roiPoints = await api().add_roi_point(x, y);
+  redrawRoi();
+  renderRoiPointList();
+});
+
+function renderRoiPointList() {
+  const el = document.getElementById('roi-points');
+  if (!roiPoints.length) { el.innerHTML = '<div class="count">0 points</div>'; return; }
+  el.innerHTML = `<div class="count">${roiPoints.length} point${roiPoints.length === 1 ? '' : 's'}</div>` +
+    roiPoints.map(([x, y], i) => `<div>${i + 1}&nbsp; ${Math.round(x)}, ${Math.round(y)}</div>`).join('');
+}
+
+document.getElementById('roi-toggle').addEventListener('click', () => {
+  roiDrawing = !roiDrawing;
+  document.getElementById('roi-toggle').classList.toggle('on', roiDrawing);
+  canvas.classList.toggle('active', roiDrawing);
+  if (roiDrawing) resizeCanvas();
+});
+
+document.getElementById('roi-shape').addEventListener('change', async e => {
+  await api().set_roi_shape(e.target.value);
+  roiPoints = [];
+  redrawRoi();
+  renderRoiPointList();
+});
+
+document.getElementById('roi-clear').addEventListener('click', async () => {
+  await api().clear_roi();
+  roiPoints = [];
+  redrawRoi();
+  renderRoiPointList();
+});
+
+document.getElementById('roi-export').addEventListener('click', async () => {
+  const fmt = document.getElementById('roi-format').value;
+  const [w, h] = lastResolution;
+  const r = await api().export_roi(fmt, w, h);
+  toast(r.ok ? `saved ${r.path}` : `export failed: ${r.error}`);
+});
+
+// ---------- zebra ----------
+document.getElementById('zebra-toggle').addEventListener('click', async () => {
+  const btn = document.getElementById('zebra-toggle');
+  const on = !btn.classList.contains('on');
+  btn.classList.toggle('on', on);
+  await api().set_zebra(on);
+});
+
+// ---------- recording ----------
+document.getElementById('record-toggle').addEventListener('click', async () => {
+  const btn = document.getElementById('record-toggle');
+  if (!recording) {
+    const fmt = document.getElementById('record-format').value;
+    const r = await api().start_recording(fmt);
+    if (!r.ok) { toast(`record failed: ${r.error}`); return; }
+    recording = true;
+    btn.classList.add('on');
+    btn.lastChild.textContent = ' Stop recording';
+    pollRecording();
+  } else {
+    const r = await api().stop_recording();
+    recording = false;
+    btn.classList.remove('on');
+    btn.lastChild.textContent = ' Start recording';
+    if (r.ok) toast(`saved ${r.path}`);
+  }
+});
+
+async function pollRecording() {
+  if (!recording) return;
+  const s = await api().recording_status();
+  if (s.recording) {
+    const mm = String(Math.floor(s.elapsed_sec / 60)).padStart(2, '0');
+    const ss = String(Math.floor(s.elapsed_sec % 60)).padStart(2, '0');
+    document.getElementById('record-elapsed').textContent = `${mm}:${ss}`;
+    document.getElementById('record-size').textContent = `${(s.size_bytes / 1e6).toFixed(1)} MB`;
+    setTimeout(pollRecording, 1000);
+  }
+}
+
+// ---------- save frame ----------
+document.getElementById('save-frame').addEventListener('click', async () => {
+  const r = await api().save_frame();
+  toast(r.ok ? `saved ${r.path}` : `save failed: ${r.error}`);
+});
+
+// ---------- boot ----------
+document.getElementById('rescan-btn').addEventListener('click', rescan);
+window.addEventListener('pywebviewready', () => { rescan(); pollFrame(); pollStats(); });
+document.getElementById('live-frame').addEventListener('load', resizeCanvas);
+</script>
+</body>
+</html>

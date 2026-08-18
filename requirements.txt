@@ -1,0 +1,5 @@
+pywebview
+opencv-python
+numpy
+pydantic>=2
+pyyaml
