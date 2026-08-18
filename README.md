@@ -5,13 +5,12 @@ balance/etc, mark and export an ROI, and record video - for any camera type
 (V4L2/UVC, OPT USB3 Vision, and GigE Vision as a future stub), auto-detected.
 Not tied to any one project.
 
-## Why it exists
+## What it does
 
-Built alongside `iwata-detect-panel-defect`'s camera bring-up work, but kept
-separate on purpose: same need comes up on every camera-based project
-(MacFoods/toppings-classification included) - check the feed, dial in
-exposure, trace an ROI, grab a reference clip - without hand-tracing points
-in a script or re-deriving this UI per repo.
+Use the app during camera setup and image-capture work in any project: inspect
+the live feed, tune exposure and other camera controls, trace an ROI, export
+its geometry, save reference frames, and record video clips without writing
+project-specific tooling.
 
 ## Run
 
@@ -36,10 +35,8 @@ export CAM_BENCH_OPT_PYTHON=/path/to/optcam-venv/bin/python
   branch on camera type, only on this interface.
 - `cam_bench/imaging.py` - focus score (Laplacian variance), histogram,
   exposure-clipping (zebra) overlay.
-- `cam_bench/roi.py` - ROI model + export. The "Iwata" export format matches
-  `iwata-detect-panel-defect/lcd_inspection/roi.py` + `camera.py`'s
-  `load_camera_specs()` field-for-field, so it drops into that project's
-  `runtime_iwata.yaml` directly.
+- `cam_bench/roi.py` - ROI model plus generic JSON and YAML export formats for
+  reusing regions of interest in downstream camera and image-processing tools.
 - `cam_bench/recorder.py` - `cv2.VideoWriter` wrapper.
 - `cam_bench/session.py` - state shared between the JS bridge and the HTTP
   server (the one active backend, ROI points, recorder, ...).
@@ -52,8 +49,8 @@ export CAM_BENCH_OPT_PYTHON=/path/to/optcam-venv/bin/python
 
 ## Tests
 
-No hardware needed - offline checks with synthetic frames / a stub worker
-process, matching `iwata-detect-panel-defect`'s `test_scripts/` convention:
+No hardware needed - offline checks use synthetic frames and a stub worker
+process:
 
 ```
 python tests/test_imaging.py
