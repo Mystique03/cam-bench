@@ -175,6 +175,10 @@ def main() -> int:
     all_ok &= check("close() is idempotent", backend._proc is None)
     backend.close()  # must not raise
 
+    lo, hi = opt_module._EXPOSURE_US_RANGE
+    all_ok &= check("the exposure slider spans a range the default sits usefully inside",
+                     lo <= opt_module.DEFAULT_EXPOSURE_US <= hi and hi / lo <= 10_000)
+
     all_ok &= check_state_restore()
 
     del os.environ["CAM_BENCH_OPT_PYTHON"]

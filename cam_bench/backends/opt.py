@@ -27,9 +27,13 @@ SHUTDOWN_TIMEOUT_SEC = 3.0
 
 _WORKER_SCRIPT = Path(__file__).resolve().parent / "opt_worker.py"
 
-# OPT-CC1-C050-UG1-10 fallback ranges (device-reported range always wins in a real
-# deployment; this is what the UI shows before/without a live device to ask).
-_EXPOSURE_US_RANGE = (1.0, 10_000_000.0)
+# OPT-CC1-C050-UG1-10 working ranges. Deliberately narrower than what the sensor
+# accepts: the full 1us-10s span put every practical value (a production line runs
+# around 27ms) inside the first 1% of the slider, so a single pixel of drag jumped
+# from 27ms to 9 seconds. 200ms is ~5 fps, slow enough for any dark-scene tuning.
+# ponytail: hardcoded range, read it from cam.feature_info("ExposureTime").min_value/
+# .max_value if a camera needs something outside this.
+_EXPOSURE_US_RANGE = (100.0, 200_000.0)
 _GAIN_DB_RANGE = (0.0, 24.0)
 
 # Pushed to the camera at open() so the panel's numbers match the hardware. The
