@@ -1,7 +1,6 @@
 """Local HTTP server: serves the UI and one background grab loop that feeds both
-the live JPEG endpoint and any active recording - mirrors the proven pattern in
-iwata-detect-panel-defect/test_scripts/view_camera_live.py, so frame delivery
-doesn't depend on request timing and recording needs no second capture thread."""
+the live JPEG endpoint and any active recording, so frame delivery doesn't depend
+on request timing and recording needs no second capture thread."""
 from __future__ import annotations
 
 import json

@@ -1,5 +1,4 @@
-"""pywebview js_api bridge - the frontend calls these as window.pywebview.api.*,
-the same pattern as iwata-detect-panel-defect/deploy/launch_app.py's SwitchApi."""
+"""pywebview js_api bridge - the frontend calls these as window.pywebview.api.*."""
 from __future__ import annotations
 
 import json
@@ -10,7 +9,7 @@ import yaml
 
 from .backends import BACKENDS, DeviceInfo
 from .recorder import VideoRecorder
-from .roi import Roi, to_generic_json_dict, to_iwata_yaml_dict
+from .roi import Roi, to_generic_json_dict, to_yaml_dict
 from .session import Session
 
 
@@ -74,15 +73,15 @@ class JsApi:
             return {"ok": False, "error": "no ROI points drawn"}
         roi = Roi(shape=self.session.roi_shape, points=self.session.roi_points,
                   image_w=image_w, image_h=image_h)
-        if fmt == "iwata":
-            data, ext = to_iwata_yaml_dict(roi), "yaml"
+        if fmt == "yaml":
+            data, ext = to_yaml_dict(roi), "yaml"
         else:
             data, ext = to_generic_json_dict(roi), "json"
         path = self._save_dialog(f"roi.{ext}")
         if not path:
             return {"ok": False, "error": "cancelled"}
         with open(path, "w", encoding="utf-8") as f:
-            yaml.safe_dump(data, f, sort_keys=False) if fmt == "iwata" else json.dump(data, f, indent=2)
+            yaml.safe_dump(data, f, sort_keys=False) if fmt == "yaml" else json.dump(data, f, indent=2)
         return {"ok": True, "path": path}
 
     def start_recording(self, fmt: str) -> dict:

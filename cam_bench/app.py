@@ -1,5 +1,5 @@
 """Entry point: starts the local server, opens a pywebview window over it with the
-JS bridge attached - same launch shape as iwata-detect-panel-defect/deploy/launch_app.py."""
+JS bridge attached."""
 from __future__ import annotations
 
 import argparse

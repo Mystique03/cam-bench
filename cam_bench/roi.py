@@ -1,7 +1,7 @@
-"""ROI drawing model + export. The Iwata export format matches
-lcd_inspection/roi.py + camera.py's load_camera_specs() field-for-field (fallback_rect /
-calibrated_quad / calibrated_polygon + warp_size), so it drops into that project's
-runtime_iwata.yaml directly instead of being hand-traced with trace_screen_polygon.py."""
+"""ROI drawing model + export. The YAML export uses the field names an inspection
+runtime config expects (fallback_rect / calibrated_quad / calibrated_polygon plus
+warp_size), so a traced region drops straight into one instead of being transcribed
+by hand. to_generic_json_dict() is the portable, normalized alternative."""
 from __future__ import annotations
 
 from pydantic import BaseModel
@@ -16,7 +16,7 @@ class Roi(BaseModel):
     image_h: int
 
 
-def to_iwata_yaml_dict(roi: Roi) -> dict:
+def to_yaml_dict(roi: Roi) -> dict:
     if roi.shape == "rect":
         xs = [p[0] for p in roi.points]
         ys = [p[1] for p in roi.points]
