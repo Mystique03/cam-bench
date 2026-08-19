@@ -62,6 +62,7 @@ process:
 python tests/test_imaging.py
 python tests/test_roi_export.py
 python tests/test_opt_backend.py
+python tests/test_server_routes.py
 ```
 
 Real V4L2/OPT hardware needs a manual smoke check - discover a device, open

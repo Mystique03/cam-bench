@@ -72,9 +72,13 @@ def _make_handler(state: _State):
             pass
 
         def do_GET(self) -> None:
-            if self.path == "/frame.jpg":
+            # The live view cache-busts with /frame.jpg?t=<ms>, so route on the path
+            # alone - matching the raw request line would send every polled frame to
+            # the static handler and 404 it.
+            route = self.path.split("?", 1)[0]
+            if route == "/frame.jpg":
                 self._send_bytes(state.jpeg, "image/jpeg")
-            elif self.path == "/stats.json":
+            elif route == "/stats.json":
                 body = json.dumps({
                     "focus": round(state.focus, 1),
                     "fps": round(state.fps, 1),
@@ -95,7 +99,7 @@ def _make_handler(state: _State):
             self.wfile.write(body)
 
         def _serve_static(self) -> None:
-            rel = self.path.lstrip("/") or "index.html"
+            rel = self.path.split("?", 1)[0].lstrip("/") or "index.html"
             path = (WEB_DIR / rel).resolve()
             if path != WEB_DIR and WEB_DIR not in path.parents:
                 self.send_error(404)
