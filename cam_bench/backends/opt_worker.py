@@ -66,6 +66,48 @@ def raw_to_bgr(arr: np.ndarray, pixel_type) -> np.ndarray:
     return arr
 
 
+# Cam Bench is a visual aid, not a configurator: every control it writes is read back
+# first and put back at shutdown, so a camera shared with another project is handed
+# over in the state it arrived in. Values live in volatile registers that survive
+# process exit and only reset on power cycle, so leaving them changed would silently
+# reconfigure whatever opens the camera next.
+_RESTORE_PROPS = ("trigger", "exposure_us", "gain_db", "buffer_count")
+_RESTORE_ENUMS = ("ExposureAuto", "GainAuto")
+
+
+def snapshot_state(cam) -> tuple[dict, dict]:
+    """Read back every control this worker is about to write. Anything the SDK will
+    not report is left out of the snapshot and simply not restored later."""
+    props, enums = {}, {}
+    for name in _RESTORE_PROPS:
+        try:
+            props[name] = getattr(cam, name)
+        except Exception:  # noqa: BLE001 - unreadable control, nothing to restore
+            pass
+    for name in _RESTORE_ENUMS:
+        try:
+            enums[name] = cam.get_enum(name)
+        except Exception:  # noqa: BLE001
+            pass
+    return props, enums
+
+
+def restore_state(cam, state: tuple[dict, dict]) -> None:
+    """Best-effort inverse of snapshot_state. Runs during shutdown, so one control
+    failing to write back must not stop the rest from being restored."""
+    props, enums = state
+    for name, value in enums.items():
+        try:
+            cam.set_enum(name, value)
+        except Exception:  # noqa: BLE001
+            pass
+    for name, value in props.items():
+        try:
+            setattr(cam, name, value)
+        except Exception:  # noqa: BLE001
+            pass
+
+
 def reply(line: str) -> None:
     sys.stdout.write(line + "\n")
     sys.stdout.flush()
@@ -103,6 +145,8 @@ def run_worker(args: argparse.Namespace) -> int:
             except queue.Empty:
                 pass
 
+    saved = snapshot_state(cam)
+
     try:
         cam.trigger = optcam.TriggerMode.SOFTWARE
         try:
@@ -118,6 +162,8 @@ def run_worker(args: argparse.Namespace) -> int:
         cam.start(on_frame)
     except Exception as e:  # noqa: BLE001
         reply(f"ERR failed to configure/start camera: {e}")
+        restore_state(cam, saved)  # partial config may already have landed
+        cam.close()
         return 1
 
     reply("READY")
@@ -165,9 +211,12 @@ def run_worker(args: argparse.Namespace) -> int:
                 reply(f"ERR unknown command: {line.strip()!r}")
     finally:
         try:
-            cam.stop()
+            cam.stop()          # trigger mode cannot be rewritten while streaming
         finally:
-            cam.close()
+            try:
+                restore_state(cam, saved)
+            finally:
+                cam.close()
 
     return 0
 

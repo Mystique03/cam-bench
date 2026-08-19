@@ -53,6 +53,70 @@ def check(name: str, condition: bool) -> bool:
     return condition
 
 
+class _FakeCam:
+    """Stands in for optcam.Camera: the controls the worker writes, readable back."""
+
+    def __init__(self) -> None:
+        self.trigger = "CONTINUOUS"
+        self.exposure_us = 20000.0
+        self.gain_db = 6.0
+        self.buffer_count = 8
+        self._enums = {"ExposureAuto": "Continuous", "GainAuto": "Continuous"}
+
+    def get_enum(self, name: str) -> str:
+        return self._enums[name]
+
+    def set_enum(self, name: str, value: str) -> None:
+        self._enums[name] = value
+
+
+class _WriteOnlyGainCam(_FakeCam):
+    """Some SDKs refuse to report a control they will happily accept."""
+
+    @property
+    def gain_db(self):  # noqa: D102
+        raise RuntimeError("gain_db is not readable")
+
+    @gain_db.setter
+    def gain_db(self, value):
+        self._gain_db = value
+
+
+def check_state_restore() -> bool:
+    """The app must hand a shared camera back exactly as it found it - another project
+    on the same device inherits these volatile registers until a power cycle."""
+    import types
+
+    sys.modules.setdefault("optcam", types.ModuleType("optcam"))
+    from cam_bench.backends import opt_worker
+
+    cam = _FakeCam()
+    before = (cam.trigger, cam.exposure_us, cam.gain_db, cam.buffer_count,
+              cam.get_enum("ExposureAuto"), cam.get_enum("GainAuto"))
+    saved = opt_worker.snapshot_state(cam)
+
+    cam.trigger = "SOFTWARE"          # what run_worker() does to the camera
+    cam.set_enum("ExposureAuto", "Off")
+    cam.set_enum("GainAuto", "Off")
+    cam.exposure_us = 8000.0
+    cam.gain_db = 0.0
+    cam.buffer_count = 4
+
+    opt_worker.restore_state(cam, saved)
+    after = (cam.trigger, cam.exposure_us, cam.gain_db, cam.buffer_count,
+             cam.get_enum("ExposureAuto"), cam.get_enum("GainAuto"))
+    ok = check("restore_state() returns every control the worker wrote to its prior value",
+                after == before)
+
+    unreadable = _WriteOnlyGainCam()
+    saved2 = opt_worker.snapshot_state(unreadable)
+    unreadable.trigger = "SOFTWARE"
+    opt_worker.restore_state(unreadable, saved2)   # must not raise
+    ok &= check("snapshot/restore skip a control the SDK will not report",
+                 "gain_db" not in saved2[0] and unreadable.trigger == "CONTINUOUS")
+    return ok
+
+
 def main() -> int:
     all_ok = True
     tmpdir = Path(tempfile.mkdtemp())
@@ -110,6 +174,8 @@ def main() -> int:
     backend.close()
     all_ok &= check("close() is idempotent", backend._proc is None)
     backend.close()  # must not raise
+
+    all_ok &= check_state_restore()
 
     del os.environ["CAM_BENCH_OPT_PYTHON"]
     all_ok &= check("discover() returns [] gracefully when CAM_BENCH_OPT_PYTHON is unset",

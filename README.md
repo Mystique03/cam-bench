@@ -27,6 +27,13 @@ tied to one Python version, so it runs in its own process - see
 export CAM_BENCH_OPT_PYTHON=/path/to/optcam-venv/bin/python
 ```
 
+The app is a viewer, not a configurator: it reads back the OPT camera's trigger
+mode, auto-exposure/gain flags, exposure, gain and buffer count before touching
+them, and writes them back when the camera is closed. Those are volatile
+registers that survive process exit and only reset on a power cycle, so without
+that a tuning session here would silently reconfigure the next project to open
+the same camera.
+
 ## Architecture
 
 - `cam_bench/backends/` - `CameraBackend` ABC (`base.py`) + one subclass per
