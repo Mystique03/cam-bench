@@ -32,6 +32,12 @@ _WORKER_SCRIPT = Path(__file__).resolve().parent / "opt_worker.py"
 _EXPOSURE_US_RANGE = (1.0, 10_000_000.0)
 _GAIN_DB_RANGE = (0.0, 24.0)
 
+# Pushed to the camera at open() so the panel's numbers match the hardware. The
+# worker forces ExposureAuto/GainAuto off, so without this the camera would run on
+# whatever was left in its flash while the UI claimed these values.
+DEFAULT_EXPOSURE_US = 8000.0
+DEFAULT_GAIN_DB = 0.0
+
 
 def _python_bin() -> str:
     python_bin = os.environ.get("CAM_BENCH_OPT_PYTHON")
@@ -54,6 +60,10 @@ class OptBackend(CameraBackend):
         self._out_q: "queue.Queue[str | None]" = queue.Queue()
         self._exposure_us: float | None = None
         self._gain_db: float | None = None
+        # get_frame() runs on the server's grab thread and set_control() on the JS-API
+        # thread; both share one stdin/stdout pipe, so a request+reply pair has to be
+        # atomic or one thread reads the other's reply.
+        self._io_lock = threading.Lock()
 
     @staticmethod
     def discover() -> list[DeviceInfo]:
@@ -91,7 +101,8 @@ class OptBackend(CameraBackend):
     def open(self, device: DeviceInfo) -> None:
         python_bin = _python_bin()
         serial = device.extra["serial"]
-        args = [python_bin, str(_WORKER_SCRIPT), "--serial", serial]
+        args = [python_bin, str(_WORKER_SCRIPT), "--serial", serial,
+                "--exposure-us", str(DEFAULT_EXPOSURE_US), "--gain-db", str(DEFAULT_GAIN_DB)]
         self._proc = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                        stderr=subprocess.PIPE, text=True, bufsize=1)
         threading.Thread(target=self._pump_stdout, daemon=True).start()
@@ -102,15 +113,23 @@ class OptBackend(CameraBackend):
         if not line.startswith("READY"):
             self.close()
             raise RuntimeError(f"opt camera {serial}: {line.strip()}")
-        self._exposure_us = None
-        self._gain_db = None
+        self._exposure_us = DEFAULT_EXPOSURE_US
+        self._gain_db = DEFAULT_GAIN_DB
+
+    def _capture_timeout_sec(self) -> float:
+        """A long exposure legitimately takes longer than one frame period to come back,
+        so the wait has to scale with it - stay above the worker's own wait (see
+        opt_worker._frame_wait_sec) or the parent gives up on a capture still in flight."""
+        exposure_sec = (self._exposure_us or DEFAULT_EXPOSURE_US) / 1e6
+        return max(CAPTURE_TIMEOUT_SEC, exposure_sec * 2 + 1.0)
 
     def get_frame(self) -> np.ndarray:
         if self._proc is None or self._proc.poll() is not None:
             raise RuntimeError("opt backend not open")
-        self._proc.stdin.write("CAPTURE\n")
-        self._proc.stdin.flush()
-        line = self._readline(CAPTURE_TIMEOUT_SEC)
+        with self._io_lock:
+            self._proc.stdin.write("CAPTURE\n")
+            self._proc.stdin.flush()
+            line = self._readline(self._capture_timeout_sec())
         if line is None or not line.startswith("OK"):
             raise RuntimeError(f"capture failed: {line.strip() if line else 'timed out'}")
         path = Path(line[3:].strip())
@@ -122,10 +141,10 @@ class OptBackend(CameraBackend):
     def get_controls(self) -> dict[str, ControlSpec]:
         return {
             "exposure_us": ControlSpec(name="exposure_us", kind="range",
-                                        value=self._exposure_us or 8000.0,
+                                        value=self._exposure_us or DEFAULT_EXPOSURE_US,
                                         min=_EXPOSURE_US_RANGE[0], max=_EXPOSURE_US_RANGE[1],
                                         step=100, unit="us"),
-            "gain_db": ControlSpec(name="gain_db", kind="range", value=self._gain_db or 0.0,
+            "gain_db": ControlSpec(name="gain_db", kind="range", value=self._gain_db or DEFAULT_GAIN_DB,
                                     min=_GAIN_DB_RANGE[0], max=_GAIN_DB_RANGE[1],
                                     step=0.5, unit="dB"),
         }
@@ -133,9 +152,10 @@ class OptBackend(CameraBackend):
     def set_control(self, name: str, value: Any) -> None:
         if self._proc is None:
             raise RuntimeError("opt backend not open")
-        self._proc.stdin.write(f"SET {name} {float(value)}\n")
-        self._proc.stdin.flush()
-        line = self._readline(SET_TIMEOUT_SEC)
+        with self._io_lock:
+            self._proc.stdin.write(f"SET {name} {float(value)}\n")
+            self._proc.stdin.flush()
+            line = self._readline(SET_TIMEOUT_SEC)
         if line is None or not line.startswith("OK"):
             raise RuntimeError(f"set {name} failed: {line.strip() if line else 'timed out'}")
         if name == "exposure_us":

@@ -8,6 +8,8 @@ from __future__ import annotations
 import os
 import sys
 import tempfile
+import threading
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -30,7 +32,8 @@ for line in sys.stdin:
     if not parts:
         continue
     if parts[0] == "CAPTURE":
-        import tempfile, os, numpy as np
+        import tempfile, os, time, numpy as np
+        time.sleep(0.02)  # capture takes real time; widens the reply-crosstalk window
         fd, path = tempfile.mkstemp(suffix=".npy")
         os.close(fd)
         np.save(path, np.full((2, 2, 3), 7, dtype=np.uint8))
@@ -73,6 +76,36 @@ def main() -> int:
     backend.set_control("exposure_us", 8000)
     all_ok &= check("set_control() round-trips through the worker's OK reply",
                      backend.get_controls()["exposure_us"].value == 8000.0)
+
+    # get_frame() (grab thread) and set_control() (JS-API thread) share one pipe;
+    # without the io lock each thread can consume the other's reply.
+    errors: list[str] = []
+
+    def capture_loop() -> None:
+        for _ in range(40):
+            try:
+                if backend.get_frame().shape != (2, 2, 3):
+                    errors.append("capture returned the wrong array")
+            except Exception as e:  # noqa: BLE001
+                errors.append(f"capture: {e}")
+
+    def set_loop() -> None:
+        for i in range(40):
+            try:
+                backend.set_control("gain_db", float(i % 24))
+            except Exception as e:  # noqa: BLE001
+                errors.append(f"set: {e}")
+            time.sleep(0.005)  # land SETs inside the stub's capture delay
+
+    threads = [threading.Thread(target=capture_loop), threading.Thread(target=set_loop)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    all_ok &= check("concurrent get_frame()/set_control() do not steal each other's replies",
+                     not errors)
+    if errors:
+        print(f"        {len(errors)} error(s), first: {errors[0]}")
 
     backend.close()
     all_ok &= check("close() is idempotent", backend._proc is None)

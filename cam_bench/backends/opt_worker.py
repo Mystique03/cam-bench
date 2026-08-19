@@ -30,6 +30,16 @@ import optcam
 FRAME_WAIT_TIMEOUT_SEC = 1.5
 
 
+def _frame_wait_sec(cam) -> float:
+    # A dark scene needs a long exposure, and the frame cannot arrive before the
+    # exposure ends - so the wait has to track it, not a fixed 1.5s.
+    try:
+        exposure_sec = float(cam.exposure_us) / 1e6
+    except Exception:  # noqa: BLE001 - control may be unreadable; fall back to the floor
+        exposure_sec = 0.0
+    return max(FRAME_WAIT_TIMEOUT_SEC, exposure_sec * 2 + 0.5)
+
+
 def _bayer_demosaic_code(pixel_type):
     return {
         optcam.PixelType.BAYER_GR8: cv2.COLOR_BAYER_GB2BGR,
@@ -123,9 +133,10 @@ def run_worker(args: argparse.Namespace) -> int:
                     frame_q.get_nowait()
                 try:
                     cam.software_trigger()
-                    raw, pf = frame_q.get(timeout=FRAME_WAIT_TIMEOUT_SEC)
+                    wait_sec = _frame_wait_sec(cam)
+                    raw, pf = frame_q.get(timeout=wait_sec)
                 except queue.Empty:
-                    reply(f"ERR no frame within {FRAME_WAIT_TIMEOUT_SEC:g}s of trigger")
+                    reply(f"ERR no frame within {wait_sec:g}s of trigger")
                     continue
                 except Exception as e:  # noqa: BLE001
                     reply(f"ERR trigger failed: {e}")
